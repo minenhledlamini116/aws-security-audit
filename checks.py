@@ -47,4 +47,17 @@ def check_open_ssh(session):
     return findings
 
 
-ALL_CHECKS = [check_s3_public_access, check_iam_mfa, check_open_ssh]
+def check_dynamodb_kms(session):
+    ddb = session.client("dynamodb")
+    findings = []
+    for page in ddb.get_paginator("list_tables").paginate():
+        for name in page["TableNames"]:
+            table = ddb.describe_table(TableName=name)["Table"]
+            sse = table.get("SSEDescription", {})
+            if sse.get("Status") != "ENABLED":
+                findings.append(finding("dynamodb_kms", name, "LOW",
+                                        "Table uses the default AWS-owned key, not a KMS key"))
+    return findings
+
+
+ALL_CHECKS = [check_s3_public_access, check_iam_mfa, check_open_ssh, check_dynamodb_kms]
