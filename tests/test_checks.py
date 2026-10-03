@@ -1,7 +1,7 @@
 import boto3
 from moto import mock_aws
 
-from checks import check_iam_mfa, check_open_ssh, check_s3_public_access
+from checks import check_dynamodb_kms, check_iam_mfa, check_open_ssh, check_s3_public_access
 
 REGION = "eu-west-1"
 
@@ -83,3 +83,27 @@ def test_restricted_ssh_is_not_flagged():
         }],
     )
     assert check_open_ssh(make_session()) == []
+
+
+def create_table(name, **extra):
+    ddb = make_session().client("dynamodb")
+    ddb.create_table(
+        TableName=name,
+        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+        **extra,
+    )
+
+
+@mock_aws
+def test_dynamodb_flags_table_without_kms():
+    create_table("plain-table")
+    findings = check_dynamodb_kms(make_session())
+    assert [f["resource"] for f in findings] == ["plain-table"]
+
+
+@mock_aws
+def test_dynamodb_passes_table_with_kms():
+    create_table("kms-table", SSESpecification={"Enabled": True, "SSEType": "KMS"})
+    assert check_dynamodb_kms(make_session()) == []
